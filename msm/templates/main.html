@@ -1,0 +1,65 @@
+<html>
+  <head>
+    <title>MSM</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="static/bootstrap.min.css" rel="stylesheet" media="screen">
+  </head>
+  <body>
+    <div class="container">
+      <form action="" method="post">
+        <div class="row">
+          <h1>MSM</h1>
+          <br>
+        </div>
+        <div class="row">
+          <select name="workspace"><option selected value="{{workspace.name}}">{{workspace.name}}</option>{% for o in workspaces.workspaces %}<option value="{{o.name}}">{{o.name}}</option>{% endfor %}</select>
+          <input type="submit" name="action" value="Switch">
+        </div>
+        <div class="row">
+          <div class="col">
+            <div class="row">
+              <input type="text" placeholder="source_path" name="source_path" value="{{workspace.source_path}}" style="width:100%;max-width:90%;" >
+            </div>
+            <div class="row">
+              <select name="source_files" placeholder="source_files" size="16" style="width:100%;max-width:90%;" multiple="multiple">{% for o in workspace.source_files %}<option value="{{o}}">{{o}}</option>{% endfor %}</select>
+            </div>
+          </div>
+          <div class="col">
+            <div class="row">
+              <input type="text" placeholder="archive_path" name="archive_path" value="{{workspace.destination_path}}" style="width:100%;max-width:90%;" >
+            </div>
+            <div class="row">
+              <select name="destination_files" placeholder="destination_files" size="16" style="width:100%;max-width:90%;">{% for o in workspace.destination_files %}<option value="{{o}}">{{o}}</option>{% endfor %}</select>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <input type="text" placeholder="archive_name" name="archive_name" style="width:100%;max-width:90%;" value="{{request.form.archive_name}}">
+          <textarea rows="8" cols="45" placeholder="archive_comment" style="width:100%;max-width:90%;" name="archive_comment">{{request.form.archive_comment}}</textarea>
+          <input type="submit" name="action" value="Archive">
+          <input type="submit" name="action" value="Rollback">
+        </div>
+        {% if message %}
+          <div class="row">
+            <p class="message"><strong>Message:</strong> {{ message }}
+          </div>
+        {% endif %}
+      </form>
+    </div>
+  </body>
+  <script src="/static/js/jquery-3.6.1.min.js"></script>
+  <script type=text/javascript>
+          $(function() {
+            $('select[name="destination_files"]').on('change', function(e) {
+              $('input[name="archive_name"]').val($('select[name="destination_files"]').val());
+              e.preventDefault()
+              $.getJSON('/destination_files_callback', {
+                		archive_name: $('input[name="archive_name"]').val(),
+              		}, function(data) {
+                    $('textarea[name="archive_comment"]').val(data.result);
+              });
+              return false;
+            });
+          });
+  </script>
+</html>
