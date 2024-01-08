@@ -1,6 +1,5 @@
 from flask import Flask, render_template, redirect, url_for, request, flash, session, jsonify
 from werkzeug.wrappers import Request, Response
-from werkzeug.utils import secure_filename
 from werkzeug.serving import run_simple
 from markupsafe import escape
 import os, stat
@@ -11,7 +10,6 @@ from typing import List
 import shutil
 import zipfile
 import pathlib
-import chardet
 import configparser
 from secrets import token_hex
 from waitress import serve
@@ -37,7 +35,7 @@ class Workspaces:
             if os.path.isdir(self.source_path):
                 self.source_files = os.listdir(self.source_path)
             if os.path.isdir(self.destination_path):
-                self.destination_files = os.listdir(self.destination_path)
+                self.destination_files = list(map(lambda x: os.path.basename(x), sorted(filter(os.path.isfile, map(lambda x: os.path.join(self.destination_path, x), os.listdir(self.destination_path))), key=os.path.getmtime, reverse=True)))
             self.archive_name = f'{datetime.now().strftime("%Y%m%d%H%M%S")}.zip'
 
 
@@ -54,8 +52,7 @@ class Workspaces:
             archive_files = dict()
             with zipfile.ZipFile(archive_filename, mode='r') as f:
                 if len(f.comment) > 0:
-                    encoding = chardet.detect(f.comment)['encoding']
-                    archive_comment = f.comment.decode(encoding)
+                    archive_comment = f.comment.decode('utf-8')
                 for info in f.infolist():
                     archive_files[info.filename] = datetime(*info.date_time).strftime("%Y.%m.%d %H:%M:%S")
             self.update()
@@ -75,7 +72,7 @@ class Workspaces:
             return archive_name
 
 
-        def archive_exctract(self, archive_name):
+        def archive_extract(self, archive_name):
             archive_filename = os.path.join(self.destination_path, archive_name)
             if not os.path.isfile(archive_filename):
                 return ''
@@ -86,11 +83,18 @@ class Workspaces:
             with zipfile.ZipFile(archive_filename, mode='r') as f:
                 f.extractall(self.source_path)
                 if len(f.comment) > 0:
-                    encoding = chardet.detect(f.comment)['encoding']
-                    archive_comment = f.comment.decode(encoding)
+                    archive_comment = f.comment.decode('utf-8')
             self.update()
             return archive_name
 
+
+        def clear_backups(self):
+            for file in self.destination_files:
+                if file.startswith('_') and file.endswith('(BACKUP).zip'):
+                    os.remove(os.path.join(self.destination_path, file))
+            self.update()
+            return 'OK'
+        
 
     workspaces: list = field(default_factory=list)
     active_workspace: Workspace = None
@@ -128,25 +132,24 @@ def main():
     request.form.archive_name = workspaces.active_workspace.archive_name
     request.form.archive_comment = ''
     if request.method == 'POST':
-        if request.form['action'] == 'Switch':
-            workspaces.select_workspace(request.form.get('workspace'))
-            request.form.archive_name = workspaces.active_workspace.archive_name
-            message = f'Workspace {workspaces.active_workspace.name} selected'
-        elif request.form['action'] == 'Archive':
-            result = workspaces.active_workspace.archive_create(request.form.get('archive_name'), request.form.get('archive_comment'))
-            message = f'Created archive {result}'
-            if len(result) > 0:
-                message = f'Created archive {result}'
-            else:
-                message = f'Creation ERROR'
-        elif request.form['action'] == 'Rollback':
-            result = workspaces.active_workspace.archive_exctract(request.form.get('archive_name'))
-            if len(result) > 0:
-                message = f'Extracted archive {result}'
-            else:
-                message = f'Extraction ERROR'
-    else:
-        ...
+        match request.form['action']:
+            case 'Switch':
+                workspaces.select_workspace(request.form.get('workspace'))
+                request.form.archive_name = workspaces.active_workspace.archive_name
+                message = f'Workspace {workspaces.active_workspace.name} selected'
+            case 'Archive':
+                result = workspaces.active_workspace.archive_create(request.form.get('archive_name'), request.form.get('archive_comment'))
+                message = f'Created archive {result}' if len(result) > 0 else f'Creation ERROR'
+            case 'Rollback':
+                result = workspaces.active_workspace.archive_create(f'_{datetime.now().strftime("%Y%m%d%H%M%S")} (BACKUP).zip', 'BACKUP')
+                message = f'Backuped archive {result}' if len(result) > 0 else f'Backuped ERROR'                
+                result = workspaces.active_workspace.archive_extract(request.form.get('archive_name'))
+                message = f'Extracted archive {result}' if len(result) > 0 else f'Extraction ERROR'
+            case 'Clear':
+                result = workspaces.active_workspace.clear_backups()
+                message = f'Cleared backups {result}' if len(result) > 0 else f'Cleared ERROR'
+            case _:
+                ...
     return render_template('main.html', workspaces=workspaces, workspace=workspaces.active_workspace, message=message)
 
 
@@ -160,7 +163,11 @@ def destination_files_callback():
 
 
 if __name__ == '__main__':
-    # app.run(debug=True)
-    # run_simple(hostname='localhost', port=9000, application=app, use_reloader=True, use_debugger=True)
-    webbrowser.open('http://127.0.0.1:8080')
-    serve(app, host="0.0.0.0", port=8080)
+    if app.debug:
+        if not os.environ.get("WERKZEUG_RUN_MAIN"):
+            webbrowser.open('http://127.0.0.1:5000')
+        app.run(host='0.0.0.0', debug=True, port='5000')
+    else:
+        port = 10911
+        webbrowser.open(f'http://127.0.0.1:{port}')
+        serve(app, host="0.0.0.0", port=port)
