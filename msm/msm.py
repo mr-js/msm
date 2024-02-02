@@ -31,11 +31,13 @@ class Workspaces:
             func(path)
 
 
-        def update(self):
+        def update(self, name_filter=''):
             if os.path.isdir(self.source_path):
                 self.source_files = os.listdir(self.source_path)
             if os.path.isdir(self.destination_path):
                 self.destination_files = list(map(lambda x: os.path.basename(x), sorted(filter(os.path.isfile, map(lambda x: os.path.join(self.destination_path, x), os.listdir(self.destination_path))), key=os.path.getmtime, reverse=True)))
+                if name_filter:
+                    self.destination_files = list(filter(lambda x: name_filter.lower() in x.lower(), self.destination_files))
             self.archive_name = f'{datetime.now().strftime("%Y%m%d%H%M%S")}.zip'
 
 
@@ -150,6 +152,7 @@ def main():
                 message = f'Cleared backups {result}' if len(result) > 0 else f'Cleared ERROR'
             case _:
                 ...
+    request.form.archive_filter = ''
     return render_template('main.html', workspaces=workspaces, workspace=workspaces.active_workspace, message=message)
 
 
@@ -160,6 +163,14 @@ def destination_files_callback():
     archive_files_formatted = '\n'.join(f'{v}\t{k}' for k, v in archive_files.items())
     result = f'{archive_comment}\n{61*"-"}\nCREATION TIME:\t{archive_datetime}\tFILES LIST:\n{61*"-"}\n{archive_files_formatted}'
     return jsonify(result=result)
+
+
+@app.route('/archive_filter_callback')
+def archive_filter_callback():
+    global workspaces 
+    archive_filter = request.args.get('archive_filter', '', type=str)
+    workspaces.active_workspace.update(archive_filter)
+    return jsonify(result=workspaces.active_workspace.destination_files)
 
 
 if __name__ == '__main__':
