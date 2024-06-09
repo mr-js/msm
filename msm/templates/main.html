@@ -4,103 +4,183 @@
   <title>MSM</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="{{ url_for('static', filename='bootstrap.min.css') }}" rel="stylesheet" media="screen">
+  <link href="{{ url_for('static', filename='jquery-ui.min.css') }}" rel="stylesheet" media="screen">
   <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
 </head>
 
 <body>
-  <div class="container-fluid">
-    <form action="" method="post">
+  <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/jquery-ui.min.js') }}"></script>
+  <script>
+  $(document).ready(function () { 
+    $(function () {
+
+      $('#main').on('submit', function () {
+        $('#message').text('Processing. Please wait...')
+        $('#processingSpinner').show()
+        $('button[type="submit"]').prop('disabled', true)
+      })
+      
+      $('select[name="destination_files"]').on('change', function (e) {
+        $('input[name="archive_name"]').val($('select[name="destination_files"]').val())
+        e.preventDefault()
+        $.getJSON('/destination_files_callback', {
+          archive_name: $('input[name="archive_name"]').val(),
+        }, function (data) {
+          $('textarea[name="comment"]').val(data.result)
+        })
+        return false
+      })
+    })
+
+    $(function () {
+      $('input[name="archive_filter"]').on('keyup', function (e) {
+        e.preventDefault()
+        var archive_filter = $('input[name="archive_filter"]').val()
+        $.getJSON('/archive_filter_callback', {
+          archive_filter: archive_filter,
+        }, function (data) {
+          if (archive_filter.trim().length > 0) {
+            $('label[name="message"]').html('Filter applied: ' + archive_filter)
+          } else {
+            $('label[name="message"]').html('Filter applied: no filter')
+          }
+          $('select[name="destination_files"]').empty()
+          $.each(data.result, function (index, value) {
+            $('select[name="destination_files"]').append('<option value="' + value + '">' + value + '</option>')
+          })
+        })
+        return false
+      })
+    })
+
+    $(function () {
+      $('select[name="source_files"]').on('change', function (e) {
+        e.preventDefault()
+        var selectedValue = $(this).val()
+        var selectedOption = $(this).find('option:selected')
+        $.getJSON('/source_files_callback', {
+          source_name: selectedOption.text(),
+        }, function (data) {
+          $('textarea[name="comment"]').val(data.result)
+        })
+        return false
+      })
+    })
+
+    $(function () {
+      $('input[name="source_path"]').on('dblclick', function (e) {
+        $.getJSON('/explore_callback', {
+          path_type: 'source',
+        }, function (data) {
+          $('textarea[name="comment"]').val(data.result)
+        })
+        return false
+      })
+    })
+
+    $(function () {
+      $('select[name="source_files"]').on('dblclick', function (e) {
+        $.getJSON('/explore_callback', {
+          path_type: 'source',
+        }, function (data) {
+          $('textarea[name="comment"]').val(data.result)
+        })
+        return false
+      })
+    })
+
+    $(function () {
+      $('input[name="archive_path"]').on('dblclick', function (e) {
+        $.getJSON('/explore_callback', {
+          path_type: 'archive',
+        }, function (data) {
+          $('textarea[name="comment"]').val(data.result)
+        })
+        return false
+      })
+    })
+
+    $(function () {
+      $('select[name="destination_files"]').on('dblclick', function (e) {
+        $.getJSON('/explore_callback', {
+          path_type: 'archive',
+        }, function (data) {
+          $('textarea[name="comment"]').val(data.result)
+        })
+        return false
+      })
+    })    
+      
+  })
+  </script>
+
+  <div class="container my-3">
+    <form id="main" action="" method="post">
       <div class="row">
         <div class="col">
           <div class="row">
-            <div class="input-group mb-3">
-              <select class="form-control" name="workspace">
+            <div class="input-group p-0">
+              <select class="form-select" name="workspace">
                 <option selected value="{{workspace.name}}">{{workspace.name}}</option>{% for o in workspaces.workspaces
                 %}<option value="{{o.name}}">{{o.name}}</option>{% endfor %}
               </select>
-              <input class="btn" type="submit" name="action" value="Switch">
-              <input class="btn" type="submit" name="action" value="Rollback">
-              <input class="btn" type="submit" name="action" value="Clear">
-              <input class="btn" type="submit" name="action" value="Archive">
+              <input class="btn btn-secondary" type="submit" name="action" value="Switch">
+              <input class="btn btn-secondary" type="submit" name="action" value="Rollback">
+              <input class="btn btn-secondary" type="submit" name="action" value="Archive">
             </div>
           </div>
           <div class="row">
-            <input class="form-control" type="text" placeholder="source_path" name="source_path"
-              value="{{workspace.source_path}}" disabled readonly>
+            <input class="form-control" type="text" placeholder="Source path" name="source_path"
+              value="{{workspace.source_path}}" readonly>
           </div>
           <div class="row">
-            <select class="form-control" name="source_files" placeholder="source_files" size="24" multiple="multiple">{%
+            <select class="form-select" name="source_files" placeholder="Source files" size="15" multiple="multiple">{%
               for o in workspace.source_files %}<option value="{{o}}">{{o}}</option>{% endfor
               %}</select>
           </div>
         </div>
         <div class="col">
           <div class="row">
-            <div class="input-group mb-3">
-              <input class="form-control" type="text" placeholder="archive_name" name="archive_name"
-                value="{{request.form.archive_name}}">
-              <input class="form-control" type="text" placeholder="archive_filter" name="archive_filter"
-                value="{{request.form.archive_filter}}">
+            <div class="input-group p-0">
+              <input class="form-control" type="text" placeholder="Archive name" name="archive_name"
+                value="{{archive_name}}">
+              <input class="form-control" type="text" placeholder="Archive filter" name="archive_filter"
+                value="{{archive_filter}}">
+              <input class="btn btn-secondary" type="submit" name="action" value="Clear Backups">                
             </div>
           </div>
           <div class="row">
-            <input type="text" class="form-control" placeholder="archive_path" name="archive_path"
-              value="{{workspace.destination_path}}" disabled readonly>
+            <input type="text" class="form-control" placeholder="Archive path" name="archive_path"
+              value="{{workspace.destination_path}}" readonly>
           </div>
           <div class="row">
-            <select class="form-control" name="destination_files" placeholder="destination_files" size="16">{% for o in
+            <select class="form-select" name="destination_files" placeholder="Destination files" size="15">{% for o in
               workspace.destination_files %}<option value="{{o}}">{{o}}
               </option>{% endfor %}</select>
           </div>
-          <div class="row">
-            <textarea class="form-control" rows="7" cols="45" placeholder="archive_comment"
-              name="archive_comment">{{request.form.archive_comment}}</textarea>
-          </div>
         </div>
       </div>
+      <div class="row">
+        <textarea class="form-control" rows="7" cols="45" placeholder="Comment for archive"
+          name="comment">{{comment}}</textarea>
+      </div>  
       {% if message %}
       <div class="row">
-        <label class="form-label" name="message">{{message}}</label>
+        <label class="form-label" id="message" name="message">{{message}}</label>
       </div>
       {% endif %}
+    </div>
+    <div class="d-flex justify-content-center">
+      <div id="processingSpinner" class="spinner-border" role="status"  style="display: none;">
+        <strong role="status">Processing...</strong>
+        <span class="visually-hidden">Processing...</span>
+      </div>
+    </div>    
     </form>
   </div>
-  <script src="/static/js/jquery-3.6.1.min.js"></script>
-  <script>
-    $(function () {
-      $('select[name="destination_files"]').on('change', function (e) {
-        $('input[name="archive_name"]').val($('select[name="destination_files"]').val());
-        e.preventDefault()
-        $.getJSON('/destination_files_callback', {
-          archive_name: $('input[name="archive_name"]').val(),
-        }, function (data) {
-          $('textarea[name="archive_comment"]').val(data.result);
-        });
-        return false;
-      });
-    });
-  </script>
-  <script>
-    $(function () {
-      $('input[name="archive_filter"]').on('keyup', function (e) {
-        e.preventDefault()
-        var archive_filter = $('input[name="archive_filter"]').val();
-        $.getJSON('/archive_filter_callback', {
-          archive_filter: archive_filter,
-        }, function (data) {
-          if (archive_filter.trim().length > 0) {
-            $('label[name="message"]').html('Filter applied: ' + archive_filter);
-          } else {
-            $('label[name="message"]').html('Filter applied: no filter');
-          }
-          $('select[name="destination_files"]').empty();
-          $.each(data.result, function (index, value) {
-            $('select[name="destination_files"]').append('<option value="' + value + '">' + value + '</option>');
-          });
-        });
-        return false;
-      });
-    });
-  </script>
 </body>
+
+
 </html>
