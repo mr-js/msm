@@ -2,7 +2,7 @@ from flask import Flask, render_template, redirect, url_for, request, flash, ses
 from werkzeug.wrappers import Request, Response
 from werkzeug.serving import run_simple
 from markupsafe import escape
-import os, stat
+import os, stat, platform, subprocess
 from dataclasses import dataclass, field
 from typing import List
 from datetime import datetime
@@ -14,90 +14,153 @@ import configparser
 from secrets import token_hex
 from waitress import serve
 import webbrowser
+import time
+import chardet
 
 
 @dataclass
-class Workspaces:
-    @dataclass
-    class Workspace:
-        name: str = ''
-        source_path: str = ''
-        destination_path: str = ''
-        archive_name: str = ''
+class Workspace:
+    name: str = ''
+    source_path: str = ''
+    destination_path: str = ''
+    archive_name: str = ''
 
 
-        def __remove_readonly(func, path, _):
-            os.chmod(path, stat.S_IWRITE)
-            func(path)
+    def __remove_readonly(func, path, _):
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
 
 
-        def update(self, name_filter=''):
-            if os.path.isdir(self.source_path):
-                self.source_files = os.listdir(self.source_path)
-            if os.path.isdir(self.destination_path):
-                self.destination_files = list(map(lambda x: os.path.basename(x), sorted(filter(os.path.isfile, map(lambda x: os.path.join(self.destination_path, x), os.listdir(self.destination_path))), key=os.path.getmtime, reverse=True)))
-                if name_filter:
-                    self.destination_files = list(filter(lambda x: name_filter.lower() in x.lower(), self.destination_files))
-            self.archive_name = f'{datetime.now().strftime("%Y%m%d%H%M%S")}.zip'
+    def exlore(self, path_type = 'source'):
+        match (path_type):
+            case 'source':
+                path = self.source_path
+            case 'archive':
+                path = self.destination_path            
+            case _:
+                path = ''
+        if path:
+            try:
+                match (platform.system()):
+                    case 'Windows':
+                        os.startfile(path)
+                    case 'Darwin':  # macOS
+                        subprocess.run(['open', path])
+                    case 'Linux':
+                        subprocess.run(['xdg-open', path])
+                    case _:
+                        raise OSError('Unsupported operating system')
+                result = True
+            except:
+                result = False
+        return path, result
 
 
-        def archive_get(self, name):
-            return list(filter(lambda workspace: workspace.name == name, self.workspaces))[0]
+    def update(self, name_filter=''):
+        if os.path.isdir(self.source_path):
+            self.source_files = os.listdir(self.source_path)
+        if os.path.isdir(self.destination_path):
+            self.destination_files = list(map(lambda x: os.path.basename(x), sorted(filter(os.path.isfile, map(lambda x: os.path.join(self.destination_path, x), os.listdir(self.destination_path))), key=os.path.getmtime, reverse=True)))
+            if name_filter:
+                self.destination_files = list(filter(lambda x: name_filter.lower() in x.lower(), self.destination_files))
+        self.archive_name = f'{datetime.now().strftime("%Y%m%d%H%M%S")}.zip'
 
 
-        def archive_info(self, archive_name):
-            archive_filename = os.path.join(self.destination_path, archive_name)
-            if not os.path.isfile(archive_filename):
-                return '', '', ''
+    def archive_get(self, name):
+        return list(filter(lambda workspace: workspace.name == name, self.workspaces))[0]
+
+
+    def archive_info(self, archive_name):
+        archive_filename = os.path.join(self.destination_path, archive_name)
+        try:
+            archive_datetime = ''
             archive_datetime = datetime.fromtimestamp(os.path.getmtime(archive_filename)).strftime("%Y.%m.%d %H:%M:%S")
+        except:
+            pass
+        try:
             archive_comment = ''
-            archive_files = dict()
             with zipfile.ZipFile(archive_filename, mode='r') as f:
-                if len(f.comment) > 0:
-                    archive_comment = f.comment.decode('utf-8')
+                comment = f.comment
+                encoding = chardet.detect(comment)['encoding']
+                archive_comment = comment.decode(encoding)             
+        except:
+            pass
+        try:
+            archive_files_counter = 0
+            archive_size_compressed = 0
+            archive_size_uncompressed = 0
+            with zipfile.ZipFile(archive_filename, mode='r') as f:
                 for info in f.infolist():
-                    archive_files[info.filename] = datetime(*info.date_time).strftime("%Y.%m.%d %H:%M:%S")
-            self.update()
-            return archive_name, archive_comment, archive_datetime, archive_files
+                    archive_files_counter += 1
+                    archive_size_compressed += info.compress_size
+                    archive_size_uncompressed += info.file_size
+
+            archive_size_compressed = round(archive_size_compressed / (1024 * 1024), 1)
+            archive_size_uncompressed = round(archive_size_uncompressed / (1024 * 1024), 1)
+        except:
+            pass        
+        try:
+            archive_files = {}
+            with zipfile.ZipFile(archive_filename, mode='r') as f:
+                files = [info.filename for info in f.infolist()]
+            archive_files = ', '.join(file for file in files)
+        except:
+            pass
+        self.update()
+        return archive_name, archive_comment, archive_datetime, archive_size_compressed, archive_size_uncompressed, archive_files, archive_files_counter
 
 
-        def archive_create(self, archive_name, archive_comment=''):
-            archive_filename = os.path.join(self.destination_path, archive_name)
+    def archive_create(self, archive_name, archive_comment=''):
+        archive_filename = os.path.join(self.destination_path, archive_name)
+        try:
             with zipfile.ZipFile(archive_filename, mode='w', compression=zipfile.ZIP_DEFLATED, allowZip64=True, compresslevel=5) as f:
                 if len(archive_comment) > 0:
-                    archive_comment = archive_comment[0:archive_comment.find(61*'-')-1] if archive_comment.find(61*'-') > 0 else archive_comment
+                    archive_comment = archive_comment[0:archive_comment.find(80*'-')-1] if archive_comment.find(80*'-') > 0 else archive_comment
                     f.comment = archive_comment.encode('utf-8')
                 directory = pathlib.Path(self.source_path)
                 for filename in directory.rglob("*"):
                     f.write(filename, arcname=filename.relative_to(directory))
             self.update()
             return archive_name
+        except:
+            return ''            
+        
 
-
-        def archive_extract(self, archive_name):
-            archive_filename = os.path.join(self.destination_path, archive_name)
-            if not os.path.isfile(archive_filename):
-                return ''
+    def archive_extract(self, archive_name):
+        archive_filename = os.path.join(self.destination_path, archive_name)
+        try:
             if os.path.isdir(self.source_path):
                 shutil.rmtree(self.source_path, onerror=self.__remove_readonly)
             os.makedirs(self.source_path)
             archive_comment = ''
-            with zipfile.ZipFile(archive_filename, mode='r') as f:
+            with zipfile.ZipFile(archive_filename, 'r') as f:
                 f.extractall(self.source_path)
+                for file_info in f.infolist():
+                    extracted_file_path = os.path.join(self.source_path, file_info.filename)
+                    date_time = datetime(*file_info.date_time)
+                    timestamp = time.mktime(date_time.timetuple())
+                    os.utime(extracted_file_path, (timestamp, timestamp))
                 if len(f.comment) > 0:
                     archive_comment = f.comment.decode('utf-8')
             self.update()
             return archive_name
+        except:
+            return ''
+        
 
-
-        def clear_backups(self):
+    def clear_backups(self):
+        try:
             for file in self.destination_files:
                 if file.startswith('_') and file.endswith('(BACKUP).zip'):
                     os.remove(os.path.join(self.destination_path, file))
             self.update()
             return 'OK'
-        
+        except:
+            return ''
 
+
+@dataclass
+class Workspaces:
     workspaces: list = field(default_factory=list)
     active_workspace: Workspace = None
 
@@ -111,7 +174,7 @@ class Workspaces:
         config.read(filename)
         self.workspaces = []
         for item in config['WORKSPACES']:
-            self.workspaces.append(self.Workspace(name=item, source_path=config['WORKSPACES'].get(item).split('=>')[0].strip(), destination_path=config['WORKSPACES'].get(item).split('=>')[1].strip()))
+            self.workspaces.append(Workspace(name=item, source_path=config['WORKSPACES'].get(item).split('=>')[0].strip(), destination_path=config['WORKSPACES'].get(item).split('=>')[1].strip()))
         self.active_workspace = self.workspaces[1]
 
 
@@ -123,6 +186,9 @@ class Workspaces:
 
 app = Flask(__name__)
 app.secret_key = token_hex(16)
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024
+app.config['MAX_FORM_PARTS'] = 1024 * 1024
+app.config['MAX_FORM_MEMORY_SIZE'] = 1024 * 1024
 workspaces = Workspaces()
 
 
@@ -130,38 +196,42 @@ workspaces = Workspaces()
 def main():
     global workspaces
     workspaces.active_workspace.update()
-    message = None
-    request.form.archive_name = workspaces.active_workspace.archive_name
-    request.form.archive_comment = ''
+    data = {}
+    data['message'] = None
+    data['archive_name'] = workspaces.active_workspace.archive_name
+    data['comment'] = ''
     if request.method == 'POST':
         match request.form['action']:
             case 'Switch':
                 workspaces.select_workspace(request.form.get('workspace'))
-                request.form.archive_name = workspaces.active_workspace.archive_name
-                message = f'Workspace {workspaces.active_workspace.name} selected'
+                data['archive_name'] = workspaces.active_workspace.archive_name
+                data['message'] =  f'Workspace {workspaces.active_workspace.name} selected'
             case 'Archive':
-                result = workspaces.active_workspace.archive_create(request.form.get('archive_name'), request.form.get('archive_comment'))
-                message = f'Created archive {result}' if len(result) > 0 else f'Creation ERROR'
+                result = workspaces.active_workspace.archive_create(request.form.get('archive_name'), request.form.get('comment'))
+                data['message'] =  f'Created archive {result}' if len(result) > 0 else f'Creation ERROR'
             case 'Rollback':
                 result = workspaces.active_workspace.archive_create(f'_{datetime.now().strftime("%Y%m%d%H%M%S")} (BACKUP).zip', 'BACKUP')
-                message = f'Backuped archive {result}' if len(result) > 0 else f'Backuped ERROR'                
+                data['message'] =  f'Backuped archive {result}' if len(result) > 0 else f'Backuped ERROR'                
                 result = workspaces.active_workspace.archive_extract(request.form.get('archive_name'))
-                message = f'Extracted archive {result}' if len(result) > 0 else f'Extraction ERROR'
-            case 'Clear':
+                data['message'] =  f'Extracted archive {result}' if len(result) > 0 else f'Extraction ERROR'
+            case 'Clear Backups':
                 result = workspaces.active_workspace.clear_backups()
-                message = f'Cleared backups {result}' if len(result) > 0 else f'Cleared ERROR'
+                data['message'] =  f'Cleared backups {result}' if len(result) > 0 else f'Cleared ERROR'
             case _:
                 ...
-    request.form.archive_filter = ''
-    return render_template('main.html', workspaces=workspaces, workspace=workspaces.active_workspace, message=message)
+    data['archive_filter'] = ''
+    data['workspaces'] = workspaces
+    data['workspace'] = workspaces.active_workspace
+    return render_template('main.html', **data)
 
 
 @app.route('/destination_files_callback')
 def destination_files_callback():
     archive_name = request.args.get('archive_name', '', type=str)
-    archive_name, archive_comment, archive_datetime, archive_files = workspaces.active_workspace.archive_info(archive_name)
-    archive_files_formatted = '\n'.join(f'{v}\t{k}' for k, v in archive_files.items())
-    result = f'{archive_comment}\n{61*"-"}\nCREATION TIME:\t{archive_datetime}\tFILES LIST:\n{61*"-"}\n{archive_files_formatted}'
+    archive_name, archive_comment, archive_datetime, archive_size_compressed, archive_size_uncompressed, archive_files, archive_files_counter = workspaces.active_workspace.archive_info(archive_name)
+    # archive_files_formatted = '\n'.join(f'{v}\t{k}' for k, v in archive_files.items())
+    archive_files_formatted = archive_files
+    result = f'{archive_comment}\n{80*"-"}\nDATE:\t{archive_datetime}\tFILES:\t{archive_files_counter}\tSIZE:\t{archive_size_compressed}/{archive_size_uncompressed} MB\n{80*"-"}\n{archive_files_formatted}'
     return jsonify(result=result)
 
 
@@ -171,6 +241,24 @@ def archive_filter_callback():
     archive_filter = request.args.get('archive_filter', '', type=str)
     workspaces.active_workspace.update(archive_filter)
     return jsonify(result=workspaces.active_workspace.destination_files)
+
+
+@app.route('/source_files_callback')
+def source_files_callback():
+    source_name = request.args.get('source_name', '', type=str)
+    source_path = workspaces.active_workspace.source_path
+    source_filename = os.path.join(source_path, source_name)
+    source_datetime = datetime.fromtimestamp(os.path.getmtime(source_filename)).strftime("%Y.%m.%d %H:%M:%S")
+    result = f'{source_name}\n{80*"-"}\nCREATION TIME:\t{source_datetime}\tFILE PATH:\n{80*"-"}\n{source_path}'
+    return jsonify(result=result)
+
+
+@app.route('/explore_callback')
+def explore_callback():
+    path_type = request.args.get('path_type', '', type=str)
+    path, result =  workspaces.active_workspace.exlore(path_type)
+    result = f'Explored "{path}"' if result else f'Cannot explore "{path}"'
+    return jsonify(result=result)
 
 
 if __name__ == '__main__':
