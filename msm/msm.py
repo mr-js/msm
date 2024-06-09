@@ -14,6 +14,7 @@ import configparser
 from secrets import token_hex
 from waitress import serve
 import webbrowser
+import time
 
 
 @dataclass
@@ -82,8 +83,13 @@ class Workspaces:
                 shutil.rmtree(self.source_path, onerror=self.__remove_readonly)
             os.makedirs(self.source_path)
             archive_comment = ''
-            with zipfile.ZipFile(archive_filename, mode='r') as f:
+            with zipfile.ZipFile(archive_filename, 'r') as f:
                 f.extractall(self.source_path)
+                for file_info in f.infolist():
+                    extracted_file_path = os.path.join(self.source_path, file_info.filename)
+                    date_time = datetime(*file_info.date_time)
+                    timestamp = time.mktime(date_time.timetuple())
+                    os.utime(extracted_file_path, (timestamp, timestamp))
                 if len(f.comment) > 0:
                     archive_comment = f.comment.decode('utf-8')
             self.update()
@@ -132,7 +138,7 @@ def main():
     workspaces.active_workspace.update()
     message = None
     request.form.archive_name = workspaces.active_workspace.archive_name
-    request.form.archive_comment = ''
+    request.form.comment = ''
     if request.method == 'POST':
         match request.form['action']:
             case 'Switch':
@@ -140,7 +146,7 @@ def main():
                 request.form.archive_name = workspaces.active_workspace.archive_name
                 message = f'Workspace {workspaces.active_workspace.name} selected'
             case 'Archive':
-                result = workspaces.active_workspace.archive_create(request.form.get('archive_name'), request.form.get('archive_comment'))
+                result = workspaces.active_workspace.archive_create(request.form.get('archive_name'), request.form.get('comment'))
                 message = f'Created archive {result}' if len(result) > 0 else f'Creation ERROR'
             case 'Rollback':
                 result = workspaces.active_workspace.archive_create(f'_{datetime.now().strftime("%Y%m%d%H%M%S")} (BACKUP).zip', 'BACKUP')
@@ -171,6 +177,16 @@ def archive_filter_callback():
     archive_filter = request.args.get('archive_filter', '', type=str)
     workspaces.active_workspace.update(archive_filter)
     return jsonify(result=workspaces.active_workspace.destination_files)
+
+
+@app.route('/source_files_callback')
+def source_files_callback():
+    source_name = request.args.get('source_name', '', type=str)
+    source_path = workspaces.active_workspace.source_path
+    source_filename = os.path.join(source_path, source_name)
+    source_datetime = datetime.fromtimestamp(os.path.getmtime(source_filename)).strftime("%Y.%m.%d %H:%M:%S")
+    result = f'{source_name}\n{61*"-"}\nCREATION TIME:\t{source_datetime}\tFILE PATH:\n{61*"-"}\n{source_path}'
+    return jsonify(result=result)
 
 
 if __name__ == '__main__':

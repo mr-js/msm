@@ -29,7 +29,7 @@
               value="{{workspace.source_path}}" disabled readonly>
           </div>
           <div class="row">
-            <select class="form-control" name="source_files" placeholder="source_files" size="24" multiple="multiple">{%
+            <select class="form-control" name="source_files" placeholder="source_files" size="15" multiple="multiple">{%
               for o in workspace.source_files %}<option value="{{o}}">{{o}}</option>{% endfor
               %}</select>
           </div>
@@ -48,15 +48,15 @@
               value="{{workspace.destination_path}}" disabled readonly>
           </div>
           <div class="row">
-            <select class="form-control" name="destination_files" placeholder="destination_files" size="16">{% for o in
+            <select class="form-control" name="destination_files" placeholder="destination_files" size="15">{% for o in
               workspace.destination_files %}<option value="{{o}}">{{o}}
               </option>{% endfor %}</select>
           </div>
-          <div class="row">
-            <textarea class="form-control" rows="7" cols="45" placeholder="archive_comment"
-              name="archive_comment">{{request.form.archive_comment}}</textarea>
-          </div>
         </div>
+      </div>
+      <div class="row">
+        <textarea class="form-control" rows="7" cols="45" placeholder="comment"
+          name="comment">{{request.form.comment}}</textarea>
       </div>
       {% if message %}
       <div class="row">
@@ -74,7 +74,7 @@
         $.getJSON('/destination_files_callback', {
           archive_name: $('input[name="archive_name"]').val(),
         }, function (data) {
-          $('textarea[name="archive_comment"]').val(data.result);
+          $('textarea[name="comment"]').val(data.result);
         });
         return false;
       });
@@ -102,5 +102,21 @@
       });
     });
   </script>
+  <script>
+    $(function () {
+      $('select[name="source_files"]').on('change', function (e) {
+        e.preventDefault()
+        var selectedValue = $(this).val();
+        var selectedOption = $(this).find('option:selected');
+        $.getJSON('/source_files_callback', {
+          source_name: selectedOption.text(),
+        }, function (data) {
+          $('textarea[name="comment"]').val(data.result);
+        });
+        return false;
+      });
+    });
+  </script>
 </body>
+
 </html>
