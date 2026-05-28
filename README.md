@@ -1,6 +1,10 @@
 # msm
  Manage your game saves and play different roles at the same time
 
+ ## Install
+
+ Set the paths for your games using the template [msm.ini](/msm/msm.ini)
+
  ## Usage
  Just run [msm](/msm/msm.py)
 
@@ -17,6 +21,3 @@
 
  > [!NOTE]
  > You can specify the path list in the ini-file directly during program execution (just press the "Switch" button to update) worspaces and paths.
-
-> [!Important]
-> 25.01.2025 Security update for compatibility with Flask 3.1.0

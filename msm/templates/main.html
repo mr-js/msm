@@ -1,4 +1,5 @@
-<html>
+<!DOCTYPE html>
+<html lang="ru">
 
 <head>
   <title>MSM</title>
@@ -6,9 +7,26 @@
   <link href="{{ url_for('static', filename='bootstrap.min.css') }}" rel="stylesheet" media="screen">
   <link href="{{ url_for('static', filename='jquery-ui.min.css') }}" rel="stylesheet" media="screen">
   <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico') }}">
+
+  <script>
+    (function () {
+      const getPreferredTheme = () => {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      const setTheme = theme => {
+        document.documentElement.setAttribute('data-bs-theme', theme);
+      }
+      setTheme(getPreferredTheme());
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        setTheme(getPreferredTheme());
+      });
+    })();
+  </script>
+
 </head>
 
-<body>
+
+<body class="bg-body text-body">
   <script src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/jquery.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/jquery-ui.min.js') }}"></script>
@@ -123,9 +141,12 @@
           <div class="row">
             <div class="input-group p-0">
               <select class="form-select" name="workspace">
-                <option selected value="{{workspace.name}}">{{workspace.name}}</option>{% for o in workspaces.workspaces
-                %}<option value="{{o.name}}">{{o.name}}</option>{% endfor %}
+                {% for o in workspaces.workspaces %}
+                  <option value="{{o.name}}" {% if o.name == workspace.name %}selected{% endif %}>{{o.name}}</option>
+                {% endfor %}
               </select>
+              <input class="form-control" type="text" placeholder="Archive active" name="archive_active"
+                value="{{workspace.archive_active}}">
               <input class="btn btn-secondary" type="submit" name="action" value="Switch">
               <input class="btn btn-secondary" type="submit" name="action" value="Rollback">
               <input class="btn btn-secondary" type="submit" name="action" value="Archive">
@@ -145,9 +166,9 @@
           <div class="row">
             <div class="input-group p-0">
               <input class="form-control" type="text" placeholder="Archive name" name="archive_name"
-                value="{{archive_name}}">
+                value="{{workspace.archive_name}}">
               <input class="form-control" type="text" placeholder="Archive filter" name="archive_filter"
-                value="{{archive_filter}}">
+                value="{{workspace.archive_filter}}">
               <input class="btn btn-secondary" type="submit" name="action" value="Clear Backups">                
             </div>
           </div>
@@ -168,19 +189,17 @@
       </div>  
       {% if message %}
       <div class="row">
-        <label class="form-label" id="message" name="message">{{message}}</label>
+        <label class="form-label" id="message" name="message">{{message|safe}}</label>
       </div>
       {% endif %}
-    </div>
-    <div class="d-flex justify-content-center">
-      <div id="processingSpinner" class="spinner-border" role="status"  style="display: none;">
-        <strong role="status">Processing...</strong>
-        <span class="visually-hidden">Processing...</span>
-      </div>
-    </div>    
+      <div class="d-flex justify-content-center mt-3">
+        <div id="processingSpinner" class="spinner-border" role="status"  style="display: none;">
+          <strong role="status">Processing...</strong>
+          <span class="visually-hidden">Processing...</span>
+        </div>
+      </div>    
     </form>
   </div>
 </body>
-
 
 </html>
