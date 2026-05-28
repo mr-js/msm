@@ -13,13 +13,14 @@ import chardet
 
 
 class Workspace:
-    def __init__(self, name, source_path, destination_path):
+    def __init__(self, name, source_path, destination_path, archive_active=''):
         self.name = name
         self.source_path = source_path
         self.destination_path = destination_path
         self.source_files = []
         self.destination_files = []
         self.archive_name = ''
+        self.archive_active = archive_active
         self.update()
 
     @staticmethod
@@ -113,6 +114,7 @@ class Workspace:
                 for filename in directory.rglob("*"):
                     f.write(filename, arcname=filename.relative_to(directory))
             self.update()
+            self.archive_active = archive_name
             return archive_name
         except:
             return ''            
@@ -134,6 +136,7 @@ class Workspace:
                 if len(f.comment) > 0:
                     archive_comment = f.comment.decode('utf-8')
             self.update()
+            self.archive_active = archive_name
             return archive_name
         except:
             return ''
@@ -154,37 +157,45 @@ class Workspaces:
     active_workspace = None
 
     def __init__(self):
-        self.workspaces_reload()
+        self.select_workspace()
 
-    def __config__read(self, filename='msm.ini'):
+    def config__read(self, filename='msm.ini'):
         config = configparser.RawConfigParser(dict_type=dict)
         config.optionxform = str
         config.read(filename)
         return config
     
-    def __config__write(self, filename='msm.ini'):
+    def config__write(self, filename='msm.ini'):
         config = configparser.RawConfigParser(dict_type=dict)
         config.optionxform = str
         config['WORKSPACES'] = {}
         for item in self.workspaces:
             config['WORKSPACES'][item.name] = f'{item.source_path} => {item.destination_path}'
-        config['COMMON'] = {}
-        config['COMMON']['LastGame'] = self.active_workspace.name
+        config['STATE'] = {}
+        config['STATE']['WORKSPACE'] = self.active_workspace.name
+        for item in self.workspaces:
+            if item.archive_active:
+                config['STATE'][item.name] = item.archive_active
         with open(filename, 'w') as configfile:
             config.write(configfile)
 
-    def workspaces_reload(self, filename='msm.ini'):
-        config = self.__config__read()
+
+    def select_workspace(self, name=''):
+        config = self.config__read()
         self.workspaces = []
         for item in config['WORKSPACES']:
-            self.workspaces.append(Workspace(name=item, source_path=config['WORKSPACES'].get(item).split('=>')[0].strip(), destination_path=config['WORKSPACES'].get(item).split('=>')[1].strip()))
-        self.active_workspace = list(filter(lambda workspace: workspace.name == config['COMMON']['LastGame'], self.workspaces))[0]
+            paths = config['WORKSPACES'][item].split('=>')
+            archive_active = config['STATE'].get(item, '')
+            workspace = Workspace(name=item, source_path=paths[0].strip(), destination_path=paths[1].strip(), archive_active=archive_active)
+            self.workspaces.append(workspace)
+        if name != '':
+            self.active_workspace = list(filter(lambda workspace: workspace.name == name, self.workspaces))[0]
+        else:
+            game_active = config['STATE']['WORKSPACE']
+            self.active_workspace = list(filter(lambda workspace: workspace.name == game_active, self.workspaces))[0]
 
-    def select_workspace(self, name):
-        self.workspaces_reload()
-        self.active_workspace = list(filter(lambda workspace: workspace.name == name, self.workspaces))[0]
         self.active_workspace.update()
-        self.__config__write()
+        self.config__write()
 
 
 app = Flask(__name__)
@@ -198,33 +209,39 @@ workspaces = Workspaces()
 @app.route('/', methods=['POST', 'GET'])
 def main():
     global workspaces
-    workspaces.active_workspace.update()
     data = {}
-    data['message'] = None
-    data['archive_name'] = workspaces.active_workspace.archive_name
-    data['comment'] = ''
+    data['message'] = ''
     if request.method == 'POST':
+        data['message'] += f'<strong>Last user action:</strong> '
         match request.form['action']:
             case 'Switch':
                 workspaces.select_workspace(request.form.get('workspace'))
-                data['archive_name'] = workspaces.active_workspace.archive_name
-                data['message'] =  f'Workspace {workspaces.active_workspace.name} selected'
+                data['message'] += f'Workspace {workspaces.active_workspace.name} selected'
             case 'Archive':
                 result = workspaces.active_workspace.archive_create(request.form.get('archive_name'), request.form.get('comment'))
-                data['message'] =  f'Created archive {result}' if len(result) > 0 else f'Creation ERROR'
+                data['message'] += f'Created archive {result}' if len(result) > 0 else f'Creation ERROR'
             case 'Rollback':
                 result = workspaces.active_workspace.archive_create(f'_{datetime.now().strftime("%Y%m%d%H%M%S")} (BACKUP).zip', 'BACKUP')
-                data['message'] =  f'Backuped archive {result}' if len(result) > 0 else f'Backuped ERROR'                
+                data['message'] += f'Backuped archive {result}; ' if len(result) > 0 else f'Backuped ERROR'                
                 result = workspaces.active_workspace.archive_extract(request.form.get('archive_name'))
-                data['message'] =  f'Extracted archive {result}' if len(result) > 0 else f'Extraction ERROR'
+                data['message'] += f'Extracted archive {result}' if len(result) > 0 else f'Extraction ERROR'
             case 'Clear Backups':
                 result = workspaces.active_workspace.clear_backups()
-                data['message'] =  f'Cleared backups {result}' if len(result) > 0 else f'Cleared ERROR'
+                data['message'] += f'Cleared backups {result}' if len(result) > 0 else f'Cleared ERROR'
             case _:
                 ...
-    data['archive_filter'] = ''
+                
+    workspaces.active_workspace.update()
+    if workspaces.active_workspace.archive_active:
+        archive_name, archive_comment, archive_datetime, archive_size_compressed, archive_size_uncompressed, archive_files, archive_files_counter = workspaces.active_workspace.archive_info(workspaces.active_workspace.archive_active)
+        archive_info_html = f'<strong>Active game archive:</strong> {archive_name} ({archive_datetime})<br>{archive_comment}<br>'
+        data['message'] = archive_info_html + data['message']
+
     data['workspaces'] = workspaces
     data['workspace'] = workspaces.active_workspace
+    data['workspace'].archive_filter = ''
+    data['comment'] = ''
+    workspaces.config__write()
     return render_template('main.html', **data)
 
 

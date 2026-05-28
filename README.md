@@ -17,6 +17,3 @@
 
  > [!NOTE]
  > You can specify the path list in the ini-file directly during program execution (just press the "Switch" button to update) worspaces and paths.
-
-> [!Important]
-> 25.01.2025 Security update for compatibility with Flask 3.1.0
